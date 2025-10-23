@@ -146,7 +146,7 @@ const HierarchyTree = React.memo(({ hierarchyData, levelAliases = {}, expandedNo
       
       setOriginalExpandedState({})
     }
-  }, [searchQuery, filteredHierarchy, expandedNodes, onToggleExpanded])
+  }, [searchQuery, filteredHierarchy, onToggleExpanded])
 
   // Memoized TreeNode component to prevent unnecessary re-renders
   const TreeNode = React.memo(({ node, depth = 0, path = '' }) => {
