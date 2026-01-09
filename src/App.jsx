@@ -169,7 +169,7 @@ function App() {
 
   // Generic hierarchy builder
   const buildHierarchy = (rows, levels, midColumn) => {
-    if (!rows || rows.length === 0) return []
+    if (!rows || rows.length === 0 || !midColumn) return []
     
     // Group rows by the first level
     const groups = {}
@@ -184,22 +184,12 @@ function App() {
     // Process each group
     const nodes = Object.entries(groups).map(([groupName, groupRows]) => {
       if (levels.length === 1) {
-        // This is a leaf node
-        if (midColumn) {
-          // Use midColumn for MIDs
-          const mids = [...new Set(groupRows.map(row => row[midColumn]?.trim()).filter(Boolean))]
-          return {
-            name: groupName,
-            mids: mids,
-            count: mids.length
-          }
-        } else {
-          // Use the group name as MID
-          return {
-            name: groupName,
-            mids: [groupName],
-            count: 1
-          }
+        // This is a leaf node - use midColumn for MIDs
+        const mids = [...new Set(groupRows.map(row => row[midColumn]?.trim()).filter(Boolean))]
+        return {
+          name: groupName,
+          mids: mids,
+          count: mids.length
         }
       } else {
         // Recurse with remaining levels
@@ -233,6 +223,11 @@ function App() {
       errors.push('Maximum of 3 hierarchy levels allowed.')
     }
     
+    // Check for required MID column
+    if (!columnMappings.midColumn) {
+      errors.push('MID Column is required.')
+    }
+    
     // Check for duplicates
     if (hasDuplicateSelections()) {
       errors.push('Duplicate headers across levels or with MID.')
@@ -245,7 +240,7 @@ function App() {
     }
     
     // Check for empty values
-    if (parsedData.length > 0 && columnMappings.levels.length > 0) {
+    if (parsedData.length > 0 && columnMappings.levels.length > 0 && columnMappings.midColumn) {
       const emptyValueCounts = {}
       columnMappings.levels.forEach(level => {
         const emptyCount = parsedData.filter(row => !row[level]?.trim()).length
@@ -254,11 +249,10 @@ function App() {
         }
       })
       
-      if (columnMappings.midColumn) {
-        const emptyMidCount = parsedData.filter(row => !row[columnMappings.midColumn]?.trim()).length
-        if (emptyMidCount > 0) {
-          emptyValueCounts[columnMappings.midColumn] = emptyMidCount
-        }
+      // Always check MID column since it's required
+      const emptyMidCount = parsedData.filter(row => !row[columnMappings.midColumn]?.trim()).length
+      if (emptyMidCount > 0) {
+        emptyValueCounts[columnMappings.midColumn] = emptyMidCount
       }
       
       Object.entries(emptyValueCounts).forEach(([column, count]) => {
@@ -272,7 +266,7 @@ function App() {
   // Memoize hierarchy data to prevent unnecessary re-renders
   // Uses activeMappings instead of columnMappings so it only updates when Generate Visualization is clicked
   const memoizedHierarchyData = React.useMemo(() => {
-    if (!parsedData.length || activeMappings.levels.length === 0) {
+    if (!parsedData.length || activeMappings.levels.length === 0 || !activeMappings.midColumn) {
       return null
     }
     
@@ -540,18 +534,21 @@ function App() {
                 {/* MID Column Mapping */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
                   <label className="block text-xs font-medium text-gray-600 mb-2">
-                    MID Column (optional)
+                    MID Column <span className="text-red-500">*</span>
                   </label>
                   <select 
                     className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:border-transparent ${
                       isMidColumnInLevels() 
                         ? 'border-red-300 focus:ring-red-500' 
+                        : !columnMappings.midColumn
+                        ? 'border-red-300 focus:ring-red-500'
                         : 'border-gray-300 focus:ring-blue-500'
                     }`}
                     value={columnMappings.midColumn || ''}
                     onChange={(e) => handleColumnMappingChange('midColumn', e.target.value)}
+                    required
                   >
-                    <option value="">Use last level as MID</option>
+                    <option value="">Select MID column...</option>
                     {columns
                       .filter(col => !columnMappings.levels.includes(col))
                       .map((column, index) => (
@@ -559,11 +556,16 @@ function App() {
                       ))}
                   </select>
                   <p className="text-xs text-gray-500 mt-1">
-                    If not set, the last Level is treated as MID.
+                    The MID column is required for the hierarchy visualization.
                   </p>
                   {isMidColumnInLevels() && (
                     <p className="text-xs text-red-600 mt-1">
                       A header cannot be both a level and MID.
+                    </p>
+                  )}
+                  {!columnMappings.midColumn && parsedData.length > 0 && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Please select a MID column.
                     </p>
                   )}
                 </div>
@@ -587,7 +589,7 @@ function App() {
                         <span className="font-medium">MID:</span> {
                           columnMappings.midColumn 
                             ? columnMappings.midColumn 
-                            : '(last level)'
+                            : 'Not selected'
                         }
                       </div>
                       {hasDuplicateSelections() && (
@@ -627,11 +629,11 @@ function App() {
                 <div className="mt-6">
                   <button 
                     className={`w-full py-3 px-4 rounded-2xl text-sm font-medium transition-all duration-200 shadow-sm ${
-                      parsedData.length > 0 && columnMappings.levels.length > 0 && !hasDuplicateSelections() && !isMidColumnInLevels()
+                      parsedData.length > 0 && columnMappings.levels.length > 0 && columnMappings.midColumn && !hasDuplicateSelections() && !isMidColumnInLevels()
                         ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl' 
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
-                    disabled={parsedData.length === 0 || columnMappings.levels.length === 0 || hasDuplicateSelections() || isMidColumnInLevels()}
+                    disabled={parsedData.length === 0 || columnMappings.levels.length === 0 || !columnMappings.midColumn || hasDuplicateSelections() || isMidColumnInLevels()}
                     onClick={handleGenerateVisualization}
                   >
                     Generate Visualization
