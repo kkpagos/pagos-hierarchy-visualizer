@@ -13,6 +13,12 @@ function App() {
     midColumn: undefined,
     levelAliases: {}
   })
+  // Active mappings used for visualization (only updated when Generate Visualization is clicked)
+  const [activeMappings, setActiveMappings] = useState({
+    levels: [],
+    midColumn: undefined,
+    levelAliases: {}
+  })
   const [expandedNodes, setExpandedNodes] = useState({})
 
   const handleFileUpload = (event) => {
@@ -39,6 +45,15 @@ function App() {
         // Auto-detect plausible columns and set default mapping
         const autoDetectedMapping = autoDetectColumns(newColumns, results.data)
         setColumnMappings(autoDetectedMapping)
+        
+        // Reset active mappings when new file is uploaded
+        setActiveMappings({
+          levels: [],
+          midColumn: undefined,
+          levelAliases: {}
+        })
+        setExpandedNodes({})
+        
         setIsLoading(false)
       },
       error: (error) => {
@@ -81,10 +96,16 @@ function App() {
   }
 
   const addLevel = () => {
-    setColumnMappings(prev => ({
-      ...prev,
-      levels: [...prev.levels, '']
-    }))
+    setColumnMappings(prev => {
+      // Limit to maximum 3 levels
+      if (prev.levels.length >= 3) {
+        return prev
+      }
+      return {
+        ...prev,
+        levels: [...prev.levels, '']
+      }
+    })
   }
 
   const removeLevel = (index) => {
@@ -207,6 +228,11 @@ function App() {
       errors.push('Select at least one level.')
     }
     
+    // Check for maximum levels
+    if (columnMappings.levels.length > 3) {
+      errors.push('Maximum of 3 hierarchy levels allowed.')
+    }
+    
     // Check for duplicates
     if (hasDuplicateSelections()) {
       errors.push('Duplicate headers across levels or with MID.')
@@ -244,16 +270,17 @@ function App() {
   }
 
   // Memoize hierarchy data to prevent unnecessary re-renders
+  // Uses activeMappings instead of columnMappings so it only updates when Generate Visualization is clicked
   const memoizedHierarchyData = React.useMemo(() => {
-    if (!parsedData.length || columnMappings.levels.length === 0) {
+    if (!parsedData.length || activeMappings.levels.length === 0) {
       return null
     }
     
     // Build hierarchy using new function
     const hierarchyNodes = buildHierarchy(
       parsedData,
-      columnMappings.levels,
-      columnMappings.midColumn
+      activeMappings.levels,
+      activeMappings.midColumn
     )
     
     // Wrap with virtual root node
@@ -263,12 +290,13 @@ function App() {
       children: hierarchyNodes,
       count: totalCount
     }
-  }, [parsedData, columnMappings.levels, columnMappings.midColumn])
+  }, [parsedData, activeMappings.levels, activeMappings.midColumn])
 
   // Memoize levelAliases to prevent unnecessary re-renders
+  // Uses activeMappings instead of columnMappings so it only updates when Generate Visualization is clicked
   const memoizedLevelAliases = React.useMemo(() => {
-    return columnMappings.levelAliases || {}
-  }, [columnMappings.levelAliases])
+    return activeMappings.levelAliases || {}
+  }, [activeMappings.levelAliases])
 
   // Memoize the toggle function to prevent unnecessary re-renders
   const memoizedToggleExpanded = React.useCallback((nodeKey) => {
@@ -292,11 +320,22 @@ function App() {
     // Clear previous errors
     setError('')
     
-    // Hierarchy data is now directly passed to component
+    // Update active mappings to trigger visualization update
+    setActiveMappings({
+      levels: [...columnMappings.levels],
+      midColumn: columnMappings.midColumn,
+      levelAliases: { ...columnMappings.levelAliases }
+    })
+    
+    // Reset expanded nodes when generating new visualization
+    setExpandedNodes({})
     
     // Log to console for debugging
-    console.log('Generated Hierarchy Data:', memoizedHierarchyData)
-    console.log('Column Mappings:', columnMappings)
+    console.log('Generated Hierarchy Data with mappings:', {
+      levels: columnMappings.levels,
+      midColumn: columnMappings.midColumn,
+      levelAliases: columnMappings.levelAliases
+    })
     console.log('Validation warnings:', validation.warnings)
   }
 
@@ -423,10 +462,21 @@ function App() {
                 {/* Hierarchy Levels Section */}
                 <div className="space-y-3 mb-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-gray-600">Hierarchy Levels</label>
+                    <label className="text-xs font-medium text-gray-600">
+                      Hierarchy Levels
+                      <span className="ml-2 text-gray-400">
+                        ({columnMappings.levels.length}/3)
+                      </span>
+                    </label>
                     <button
                       onClick={addLevel}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-700 rounded-lg border border-blue-200 hover:border-blue-300 transition-all duration-200 shadow-sm hover:shadow-md"
+                      disabled={columnMappings.levels.length >= 3}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-200 shadow-sm ${
+                        columnMappings.levels.length >= 3
+                          ? 'text-gray-400 bg-gray-100 border-gray-200 cursor-not-allowed'
+                          : 'text-blue-600 bg-blue-50 hover:bg-blue-100 hover:text-blue-700 border-blue-200 hover:border-blue-300 hover:shadow-md'
+                      }`}
+                      title={columnMappings.levels.length >= 3 ? 'Maximum of 3 levels allowed' : 'Add Level'}
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -606,13 +656,24 @@ function App() {
               
               {/* Visualization Container */}
               <div className="flex-1 border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-                <HierarchyTree 
-                  key={`hierarchy-${JSON.stringify(columnMappings.levels)}-${columnMappings.midColumn}`}
-                  hierarchyData={memoizedHierarchyData} 
-                  levelAliases={memoizedLevelAliases}
-                  expandedNodes={expandedNodes}
-                  onToggleExpanded={memoizedToggleExpanded}
-                />
+                {activeMappings.levels.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-gray-400">
+                    <div className="text-center">
+                      <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                      <p className="text-sm">Click "Generate Visualization" to see the hierarchy</p>
+                    </div>
+                  </div>
+                ) : (
+                  <HierarchyTree 
+                    key={`hierarchy-${JSON.stringify(activeMappings.levels)}-${activeMappings.midColumn}`}
+                    hierarchyData={memoizedHierarchyData} 
+                    levelAliases={memoizedLevelAliases}
+                    expandedNodes={expandedNodes}
+                    onToggleExpanded={memoizedToggleExpanded}
+                  />
+                )}
               </div>
             </div>
           </motion.div>
