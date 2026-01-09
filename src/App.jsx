@@ -9,7 +9,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [columnMappings, setColumnMappings] = useState({
-    levels: [],
+    levels: [''], // Initialize with level 1 already showing
     midColumn: undefined,
     levelAliases: {}
   })
@@ -109,10 +109,16 @@ function App() {
   }
 
   const removeLevel = (index) => {
-    setColumnMappings(prev => ({
-      ...prev,
-      levels: prev.levels.filter((_, i) => i !== index)
-    }))
+    setColumnMappings(prev => {
+      // Don't allow removing the last level - always keep at least level 1
+      if (prev.levels.length <= 1) {
+        return prev
+      }
+      return {
+        ...prev,
+        levels: prev.levels.filter((_, i) => i !== index)
+      }
+    })
   }
 
   const updateLevel = (index, value) => {
@@ -158,7 +164,8 @@ function App() {
   const autoDetectColumns = (columns, data) => {
     // Simple auto-detection: use first column as default level
     // In a real implementation, this could be more sophisticated
-    const defaultLevels = columns.length > 0 ? [columns[0]] : []
+    // Always ensure at least level 1 exists (empty if no columns, or first column if available)
+    const defaultLevels = columns.length > 0 ? [columns[0]] : ['']
     
     return {
       levels: defaultLevels,
@@ -213,8 +220,9 @@ function App() {
     const errors = []
     const warnings = []
     
-    // Check for required levels
-    if (columnMappings.levels.length === 0) {
+    // Check for required levels - at least one level must have a selected value
+    const levelsWithValues = columnMappings.levels.filter(level => level && level.trim() !== '')
+    if (levelsWithValues.length === 0) {
       errors.push('Select at least one level.')
     }
     
@@ -242,7 +250,8 @@ function App() {
     // Check for empty values
     if (parsedData.length > 0 && columnMappings.levels.length > 0 && columnMappings.midColumn) {
       const emptyValueCounts = {}
-      columnMappings.levels.forEach(level => {
+      // Only check levels that have values selected
+      columnMappings.levels.filter(level => level && level.trim() !== '').forEach(level => {
         const emptyCount = parsedData.filter(row => !row[level]?.trim()).length
         if (emptyCount > 0) {
           emptyValueCounts[level] = emptyCount
@@ -301,7 +310,8 @@ function App() {
   }, [])
 
   const handleGenerateVisualization = () => {
-    if (!parsedData.length || columnMappings.levels.length === 0) {
+    const levelsWithValues = columnMappings.levels.filter(level => level && level.trim() !== '')
+    if (!parsedData.length || levelsWithValues.length === 0) {
       return
     }
     
@@ -629,11 +639,11 @@ function App() {
                 <div className="mt-6">
                   <button 
                     className={`w-full py-3 px-4 rounded-2xl text-sm font-medium transition-all duration-200 shadow-sm ${
-                      parsedData.length > 0 && columnMappings.levels.length > 0 && columnMappings.midColumn && !hasDuplicateSelections() && !isMidColumnInLevels()
+                      parsedData.length > 0 && columnMappings.levels.filter(level => level && level.trim() !== '').length > 0 && columnMappings.midColumn && !hasDuplicateSelections() && !isMidColumnInLevels()
                         ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl' 
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
-                    disabled={parsedData.length === 0 || columnMappings.levels.length === 0 || !columnMappings.midColumn || hasDuplicateSelections() || isMidColumnInLevels()}
+                    disabled={parsedData.length === 0 || columnMappings.levels.filter(level => level && level.trim() !== '').length === 0 || !columnMappings.midColumn || hasDuplicateSelections() || isMidColumnInLevels()}
                     onClick={handleGenerateVisualization}
                   >
                     Generate Visualization
