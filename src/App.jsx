@@ -1,7 +1,46 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
 import Papa from 'papaparse'
+import * as XLSX from 'xlsx'
 import HierarchyTree from './HierarchyTree'
+
+const SAMPLE_DATA = [
+  // United States - In-Store
+  { Country: 'United States', Channel: 'In-Store', MID: '4000100001' },
+  { Country: 'United States', Channel: 'In-Store', MID: '4000100002' },
+  { Country: 'United States', Channel: 'In-Store', MID: '4000100003' },
+  { Country: 'United States', Channel: 'In-Store', MID: '4000100004' },
+  { Country: 'United States', Channel: 'In-Store', MID: '4000100005' },
+  // United States - Online
+  { Country: 'United States', Channel: 'Online', MID: '4000100101' },
+  { Country: 'United States', Channel: 'Online', MID: '4000100102' },
+  // Canada - In-Store
+  { Country: 'Canada', Channel: 'In-Store', MID: '4000200001' },
+  { Country: 'Canada', Channel: 'In-Store', MID: '4000200002' },
+  { Country: 'Canada', Channel: 'In-Store', MID: '4000200003' },
+  // Canada - Online
+  { Country: 'Canada', Channel: 'Online', MID: '4000200101' },
+  { Country: 'Canada', Channel: 'Online', MID: '4000200102' },
+  // United Kingdom - In-Store
+  { Country: 'United Kingdom', Channel: 'In-Store', MID: '4000300001' },
+  { Country: 'United Kingdom', Channel: 'In-Store', MID: '4000300002' },
+  { Country: 'United Kingdom', Channel: 'In-Store', MID: '4000300003' },
+  // United Kingdom - Online
+  { Country: 'United Kingdom', Channel: 'Online', MID: '4000300101' },
+  { Country: 'United Kingdom', Channel: 'Online', MID: '4000300102' },
+  // Germany - In-Store
+  { Country: 'Germany', Channel: 'In-Store', MID: '4000400001' },
+  { Country: 'Germany', Channel: 'In-Store', MID: '4000400002' },
+  { Country: 'Germany', Channel: 'In-Store', MID: '4000400003' },
+  // Germany - Online
+  { Country: 'Germany', Channel: 'Online', MID: '4000400101' },
+  { Country: 'Germany', Channel: 'Online', MID: '4000400102' },
+  // Australia - In-Store
+  { Country: 'Australia', Channel: 'In-Store', MID: '4000500001' },
+  { Country: 'Australia', Channel: 'In-Store', MID: '4000500002' },
+  // Australia - Online
+  { Country: 'Australia', Channel: 'Online', MID: '4000500101' },
+]
 
 function App() {
   const [parsedData, setParsedData] = useState([])
@@ -19,7 +58,32 @@ function App() {
     midColumn: undefined,
     levelAliases: {}
   })
-  const [expandedNodes, setExpandedNodes] = useState({})
+  const [isSampleData, setIsSampleData] = useState(false)
+  const [companyName, setCompanyName] = useState('')
+
+  const handleLoadSampleData = () => {
+    const sampleColumns = Object.keys(SAMPLE_DATA[0])
+    const sampleMappings = { levels: ['Country', 'Channel'], midColumn: 'MID', levelAliases: {} }
+    setParsedData(SAMPLE_DATA)
+    setColumns(sampleColumns)
+    setColumnMappings(sampleMappings)
+    setActiveMappings(sampleMappings)
+    setCompanyName('Acme Inc.')
+    setError('')
+    setIsSampleData(true)
+  }
+
+  const applyParsedData = (data) => {
+    setParsedData(data)
+    const newColumns = Object.keys(data[0] || {})
+    setColumns(newColumns)
+    const autoDetectedMapping = autoDetectColumns(newColumns, data)
+    setColumnMappings(autoDetectedMapping)
+    setActiveMappings({ levels: [], midColumn: undefined, levelAliases: {} })
+    setCompanyName('')
+    setIsSampleData(false)
+    setIsLoading(false)
+  }
 
   const handleFileUpload = (event) => {
     const file = event.target.files[0]
@@ -27,40 +91,50 @@ function App() {
 
     setIsLoading(true)
     setError('')
-    
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        if (results.errors.length > 0) {
-          setError(`CSV parsing error: ${results.errors[0].message}`)
+
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
+
+    if (isExcel) {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const workbook = XLSX.read(e.target.result, { type: 'array' })
+          const sheet = workbook.Sheets[workbook.SheetNames[0]]
+          const data = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+          if (!data.length) {
+            setError('The Excel file appears to be empty.')
+            setIsLoading(false)
+            return
+          }
+          applyParsedData(data)
+        } catch (err) {
+          setError(`Excel parsing error: ${err.message}`)
           setIsLoading(false)
-          return
         }
-        
-        setParsedData(results.data)
-        const newColumns = Object.keys(results.data[0] || {})
-        setColumns(newColumns)
-        
-        // Auto-detect plausible columns and set default mapping
-        const autoDetectedMapping = autoDetectColumns(newColumns, results.data)
-        setColumnMappings(autoDetectedMapping)
-        
-        // Reset active mappings when new file is uploaded
-        setActiveMappings({
-          levels: [],
-          midColumn: undefined,
-          levelAliases: {}
-        })
-        setExpandedNodes({})
-        
-        setIsLoading(false)
-      },
-      error: (error) => {
-        setError(`File reading error: ${error.message}`)
+      }
+      reader.onerror = () => {
+        setError('File reading error.')
         setIsLoading(false)
       }
-    })
+      reader.readAsArrayBuffer(file)
+    } else {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          if (results.errors.length > 0) {
+            setError(`CSV parsing error: ${results.errors[0].message}`)
+            setIsLoading(false)
+            return
+          }
+          applyParsedData(results.data)
+        },
+        error: (err) => {
+          setError(`File reading error: ${err.message}`)
+          setIsLoading(false)
+        }
+      })
+    }
   }
 
   const handleDrop = (event) => {
@@ -68,11 +142,13 @@ function App() {
     const files = event.dataTransfer.files
     if (files.length > 0) {
       const file = files[0]
-      if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
+      const accepted = file.type === 'text/csv' || file.name.endsWith('.csv') ||
+        file.name.endsWith('.xlsx') || file.name.endsWith('.xls')
+      if (accepted) {
         const fakeEvent = { target: { files: [file] } }
         handleFileUpload(fakeEvent)
       } else {
-        setError('Please upload a CSV file')
+        setError('Please upload a CSV or Excel file (.csv, .xlsx, .xls)')
       }
     }
   }
@@ -181,7 +257,7 @@ function App() {
     // Group rows by the first level
     const groups = {}
     rows.forEach(row => {
-      const firstLevelValue = row[levels[0]]?.trim() || '—'
+      const firstLevelValue = String(row[levels[0]] ?? '').trim() || '—'
       if (!groups[firstLevelValue]) {
         groups[firstLevelValue] = []
       }
@@ -192,7 +268,7 @@ function App() {
     const nodes = Object.entries(groups).map(([groupName, groupRows]) => {
       if (levels.length === 1) {
         // This is a leaf node - use midColumn for MIDs
-        const mids = [...new Set(groupRows.map(row => row[midColumn]?.trim()).filter(Boolean))]
+        const mids = [...new Set(groupRows.map(row => String(row[midColumn] ?? '').trim()).filter(Boolean))]
         return {
           name: groupName,
           mids: mids,
@@ -252,14 +328,14 @@ function App() {
       const emptyValueCounts = {}
       // Only check levels that have values selected
       columnMappings.levels.filter(level => level && level.trim() !== '').forEach(level => {
-        const emptyCount = parsedData.filter(row => !row[level]?.trim()).length
+        const emptyCount = parsedData.filter(row => !String(row[level] ?? '').trim()).length
         if (emptyCount > 0) {
           emptyValueCounts[level] = emptyCount
         }
       })
       
       // Always check MID column since it's required
-      const emptyMidCount = parsedData.filter(row => !row[columnMappings.midColumn]?.trim()).length
+      const emptyMidCount = parsedData.filter(row => !String(row[columnMappings.midColumn] ?? '').trim()).length
       if (emptyMidCount > 0) {
         emptyValueCounts[columnMappings.midColumn] = emptyMidCount
       }
@@ -295,20 +371,6 @@ function App() {
     }
   }, [parsedData, activeMappings.levels, activeMappings.midColumn])
 
-  // Memoize levelAliases to prevent unnecessary re-renders
-  // Uses activeMappings instead of columnMappings so it only updates when Generate Visualization is clicked
-  const memoizedLevelAliases = React.useMemo(() => {
-    return activeMappings.levelAliases || {}
-  }, [activeMappings.levelAliases])
-
-  // Memoize the toggle function to prevent unnecessary re-renders
-  const memoizedToggleExpanded = React.useCallback((nodeKey) => {
-    setExpandedNodes(prev => ({
-      ...prev,
-      [nodeKey]: !prev[nodeKey]
-    }))
-  }, [])
-
   const handleGenerateVisualization = () => {
     const levelsWithValues = columnMappings.levels.filter(level => level && level.trim() !== '')
     if (!parsedData.length || levelsWithValues.length === 0) {
@@ -331,15 +393,6 @@ function App() {
       levelAliases: { ...columnMappings.levelAliases }
     })
     
-    // Reset expanded nodes when generating new visualization
-    setExpandedNodes({})
-    
-    // Log to console for debugging
-    console.log('Generated Hierarchy Data with mappings:', {
-      levels: columnMappings.levels,
-      midColumn: columnMappings.midColumn,
-      levelAliases: columnMappings.levelAliases
-    })
     console.log('Validation warnings:', validation.warnings)
   }
 
@@ -372,7 +425,7 @@ function App() {
           >
           {/* Left Column - Input Panel */}
           <motion.div
-            className="bg-gray-100 rounded-2xl shadow-lg border border-gray-200 p-6 flex flex-col"
+            className="bg-gray-100 rounded-2xl shadow-lg border border-gray-200 p-6 flex flex-col sticky top-8 self-start max-h-[calc(100vh-6rem)] overflow-y-auto"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
@@ -395,7 +448,7 @@ function App() {
                   <input
                     id="csv-upload"
                     type="file"
-                    accept=".csv"
+                    accept=".csv,.xlsx,.xls"
                     onChange={handleFileUpload}
                     className="hidden"
                   />
@@ -410,12 +463,32 @@ function App() {
                       <svg className="w-8 h-8 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
                       </svg>
-                      <p className="text-sm text-gray-600 mb-2">Drop your CSV file here or click to browse</p>
-                      <p className="text-xs text-gray-500">Supports .csv files up to 10MB</p>
+                      <p className="text-sm text-gray-600 mb-2">Drop your file here or click to browse</p>
+                      <p className="text-xs text-gray-500">Supports .csv, .xlsx, .xls up to 10MB</p>
+                      <div className="mt-3 flex items-center gap-2">
+                        <div className="flex-1 h-px bg-gray-200"></div>
+                        <span className="text-xs text-gray-400">or</span>
+                        <div className="flex-1 h-px bg-gray-200"></div>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleLoadSampleData() }}
+                        className="mt-3 text-xs font-medium text-blue-600 hover:text-blue-800 underline underline-offset-2"
+                      >
+                        load sample data
+                      </button>
                     </>
                   )}
                 </div>
                 
+                {isSampleData && (
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2">
+                    <svg className="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-xs text-amber-700">Demo data loaded — upload a CSV to replace it</p>
+                  </div>
+                )}
+
                 {error && (
                   <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-2xl">
                     <p className="text-sm text-red-600">{error}</p>
@@ -636,8 +709,25 @@ function App() {
                   )
                 })()}
 
+                {/* Company Name */}
+                <div className="mt-4 bg-white rounded-2xl p-4 shadow-sm border border-gray-200">
+                  <label className="block text-xs font-medium text-gray-600 mb-2">
+                    Company / DBA Name
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="e.g. Acme Inc."
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Appears as the root label in the hierarchy.
+                  </p>
+                </div>
+
                 <div className="mt-6">
-                  <button 
+                  <button
                     className={`w-full py-3 px-4 rounded-2xl text-sm font-medium transition-all duration-200 shadow-sm ${
                       parsedData.length > 0 && columnMappings.levels.filter(level => level && level.trim() !== '').length > 0 && columnMappings.midColumn && !hasDuplicateSelections() && !isMidColumnInLevels()
                         ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl' 
@@ -678,12 +768,10 @@ function App() {
                     </div>
                   </div>
                 ) : (
-                  <HierarchyTree 
+                  <HierarchyTree
                     key={`hierarchy-${JSON.stringify(activeMappings.levels)}-${activeMappings.midColumn}`}
-                    hierarchyData={memoizedHierarchyData} 
-                    levelAliases={memoizedLevelAliases}
-                    expandedNodes={expandedNodes}
-                    onToggleExpanded={memoizedToggleExpanded}
+                    hierarchyData={memoizedHierarchyData}
+                    companyName={companyName}
                   />
                 )}
               </div>
