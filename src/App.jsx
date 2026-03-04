@@ -60,6 +60,7 @@ function App() {
   })
   const [isSampleData, setIsSampleData] = useState(false)
   const [companyName, setCompanyName] = useState('')
+  const [generateAttempted, setGenerateAttempted] = useState(false)
 
   const handleLoadSampleData = () => {
     const sampleColumns = Object.keys(SAMPLE_DATA[0])
@@ -363,6 +364,7 @@ function App() {
   }, [parsedData, activeMappings.levels, activeMappings.midColumn])
 
   const handleGenerateVisualization = () => {
+    setGenerateAttempted(true)
     const levelsWithValues = columnMappings.levels.filter(level => level && level.trim() !== '')
     if (!parsedData.length || levelsWithValues.length === 0) {
       return
@@ -395,6 +397,7 @@ function App() {
     setCompanyName('')
     setIsSampleData(false)
     setError('')
+    setGenerateAttempted(false)
   }
 
   return (
@@ -626,7 +629,7 @@ function App() {
                       className={`w-full appearance-none px-3 py-2 pr-8 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:border-transparent bg-white ${
                         isMidColumnInLevels()
                           ? 'border-red-300 focus:ring-red-500'
-                          : parsedData.length > 0 && !columnMappings.midColumn
+                          : generateAttempted && !columnMappings.midColumn
                           ? 'border-red-300 focus:ring-red-500'
                           : 'border-gray-300 focus:ring-blue-500'
                       }`}
